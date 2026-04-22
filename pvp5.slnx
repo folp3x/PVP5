@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="pvp5.vcxproj" Id="a7c167e4-af04-4f80-bdb1-3ba64b7c6290" />
+</Solution>
