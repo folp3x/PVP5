@@ -91,8 +91,7 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     } else {
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q1;
-      snprintf(transition, sizeof(transition), "- Q0 %s [_ ; _ , L]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q0 %s [_ ; _ , L]", tape_str);
     }
     break;
 
@@ -100,8 +99,7 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     if (rsymb == '1') {
       *wrsymb = '0';
       ctx->fsmstate = FSMST_Q5;
-      snprintf(transition, sizeof(transition), "- Q1 %s [1 ; 0 , S]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q1 %s [1 ; 0 , S]", tape_str);
     } else {
       ctx->fsmstate = FSMST_Q2;
       snprintf(transition, sizeof(transition), "- Q1 %s [!1 ; ~ , S]",
@@ -114,8 +112,7 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
       *wrsymb = '9';
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q2;
-      snprintf(transition, sizeof(transition), "- Q2 %s [0 ; 9 , L]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q2 %s [0 ; 9 , L]", tape_str);
     } else if (rsymb >= '1' && rsymb <= '9') {
       *wrsymb = rsymb - 1;
       ctx->nextaddr = ctx->curraddr - 1;
@@ -137,8 +134,7 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     } else {
       ctx->nextaddr = ctx->curraddr + 1;
       ctx->fsmstate = FSMST_Q4;
-      snprintf(transition, sizeof(transition), "- Q3 %s [_ ; _ , R]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q3 %s [_ ; _ , R]", tape_str);
     }
     break;
 
@@ -147,8 +143,7 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
       *wrsymb = '_';
       ctx->nextaddr = ctx->curraddr + 1;
       ctx->fsmstate = FSMST_Q4;
-      snprintf(transition, sizeof(transition), "- Q4 %s [0 ; _ , R]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q4 %s [0 ; _ , R]", tape_str);
     } else {
       ctx->fsmstate = FSMST_Q5;
       snprintf(transition, sizeof(transition), "- Q4 %s [!0 ; ~ , S]",
@@ -193,8 +188,9 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
 
   if (ctx->curraddr == ctx->last_addr && ctx->fsmstate == ctx->last_state) {
     ctx->hang_counter++;
-    if (ctx->hang_counter > 3) {
-      printf("%s>hang detected\n", ctx->name);
+    if (ctx->hang_counter > 1) {
+      snprintf(transition, sizeof(transition), "%s>hang detected\n", ctx->name);
+      send_via_uart(transition);
       ctx->stepcnt = -1;
       return -1;
     }
@@ -221,7 +217,9 @@ void ProcessOneTm(struct TM_Context *ctx) {
         if (keycode & (1 << i)) {
           uint32_t addr = (i < 8) ? MT1_BASE_ADDR + i : MT2_BASE_ADDR + (i - 8);
           i2cFRAM_wr(addr, &blank, 1);
-          printf("%s>fail addr %d (K%d pressed)\n", ctx->name, addr, i + 1);
+          snprintf(buf, sizeof(buf), "%s>fail addr %d (K%d pressed)\n",
+                   ctx->name, addr, i + 1);
+          send_via_uart(buf);
         }
       }
     }
@@ -237,8 +235,10 @@ void ProcessOneTm(struct TM_Context *ctx) {
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ctx->stepcnt = 0;
       ResetTimer(ctx->timer_id);
-      printf("%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
-             state, ctx->nextaddr, ctx->steptm);
+      snprintf(buf, sizeof(buf),
+               "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
+               state, ctx->nextaddr, ctx->steptm);
+      send_via_uart(buf);
       return;
     }
   }
@@ -253,14 +253,18 @@ void ProcessOneTm(struct TM_Context *ctx) {
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ctx->stepcnt = 0;
       ResetTimer(ctx->timer_id);
-      printf("%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
-             state, ctx->nextaddr, ctx->steptm);
+      snprintf(buf, sizeof(buf),
+               "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
+               state, ctx->nextaddr, ctx->steptm);
+      send_via_uart(buf);
       return;
     }
   }
 
   // Если МТ в состоянии SYNCWAIT и не получила сообщение
   if (ctx->mtstatectrl == MTCTRL_SYNCWAIT) {
+    snprintf(buf, sizeof(buf), "%s>waiting for sync\n", ctx->name);
+    send_via_uart(buf);
     return;
   }
 
@@ -278,7 +282,9 @@ void ProcessOneTm(struct TM_Context *ctx) {
            ctx->nextaddr >= MT1_BASE_ADDR + TAPE_SIZE) ||
           (ctx->base_addr == MT2_BASE_ADDR && ctx->nextaddr < MT2_BASE_ADDR)) {
 
-        printf("%s: start address out of tape bounds!\n", ctx->name);
+        snprintf(buf, sizeof(buf), "%s: start address out of tape bounds!\n",
+                 ctx->name);
+        send_via_uart(buf);
         snprintf((char *)aTrbuf, sizeof(aTrbuf),
                  "%s Error: address out of tape bounds!\n", ctx->name);
         ctx->mtstatectrl = MTCTRL_UARTTR;
@@ -393,6 +399,7 @@ void InitTM(void) {
   mt1.msg_id = MSG_TM1STRT;
   mt1.rdsymbol = 0;
   mt1.wrsymbol = 0;
+  mt1.hang_counter = 0;
   mt1.last_addr = 0;
   mt1.last_state = 0;
   strcpy(mt1.name, "TM1");
@@ -408,6 +415,7 @@ void InitTM(void) {
   mt2.msg_id = MSG_TM2STRT;
   mt2.rdsymbol = 0;
   mt2.wrsymbol = 0;
+  mt2.hang_counter = 0;
   mt2.last_addr = 0;
   mt2.last_state = 0;
   strcpy(mt2.name, "TM2");
