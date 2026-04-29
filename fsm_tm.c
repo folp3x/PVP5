@@ -152,12 +152,18 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     break;
 
   case FSMST_Q5:
-    ctx->stepcnt = -1;
+    ctx->steptm = -1;
     snprintf(transition, sizeof(transition), "- Q5 %s", tape_str);
-    break;
 
+    if (ctx->base_addr == MT1_BASE_ADDR) {
+      FSM_SendMessage(MSG_SYNC_MT1_TO_MT2, "STOP");
+    } else {
+      FSM_SendMessage(MSG_SYNC_MT2_TO_MT1, "STOP");
+    }
+
+    break;
   default:
-    ctx->stepcnt = -1;
+    ctx->steptm = -1;
     break;
   }
 
@@ -165,34 +171,28 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
           sizeof(ctx->last_transition_info) - 1);
   ctx->last_transition_info[sizeof(ctx->last_transition_info) - 1] = '\0';
 
-  // МТ1: правая граница -> переход в SYNCWAIT
+  // МТ1: правая граница
   if (ctx->base_addr == MT1_BASE_ADDR &&
       ctx->nextaddr >= MT1_BASE_ADDR + TAPE_SIZE) {
     snprintf(sync_data, sizeof(sync_data), "%d:%d", (int)ctx->fsmstate,
              (int)ctx->nextaddr);
     FSM_SendMessage(MSG_SYNC_MT1_TO_MT2, sync_data);
-    ctx->mtstatectrl = MTCTRL_SYNCWAIT;
-    ctx->stepcnt = -1;
-    return -1;
+    return -2;
   }
 
-  // МТ2: левая граница -> переход в SYNCWAIT
+  // МТ2: левая граница
   if (ctx->base_addr == MT2_BASE_ADDR && ctx->nextaddr < MT2_BASE_ADDR) {
     snprintf(sync_data, sizeof(sync_data), "%d:%d", (int)ctx->fsmstate,
              (int)ctx->nextaddr);
     FSM_SendMessage(MSG_SYNC_MT2_TO_MT1, sync_data);
-    ctx->mtstatectrl = MTCTRL_SYNCWAIT;
-    ctx->stepcnt = -1;
-    return -1;
+    return -2;
   }
 
   if (ctx->curraddr == ctx->last_addr && ctx->fsmstate == ctx->last_state) {
     ctx->hang_counter++;
     if (ctx->hang_counter > 1) {
       snprintf(transition, sizeof(transition), "%s>hang detected\n", ctx->name);
-      send_via_uart(transition);
-      ctx->stepcnt = -1;
-      return -1;
+      return -3;
     }
   } else {
     ctx->hang_counter = 0;
@@ -228,12 +228,16 @@ void ProcessOneTm(struct TM_Context *ctx) {
   // МТ2 получает сообщение от МТ1
   if (ctx->msg_id == MSG_TM2STRT) {
     if (FSM_GetMessage(MSG_SYNC_MT1_TO_MT2, (void *)&pRxbuf)) {
+      if (strcmp((char *)pRxbuf, "STOP") == 0) {
+        ctx->mtstatectrl = MTCTRL_RXCMD;
+        ctx->steptm = -1;
+        return;
+      }
       int state, nextaddr;
       sscanf((char *)pRxbuf, "%d:%d", &state, &nextaddr);
       ctx->fsmstate = (char)state;
       ctx->nextaddr = nextaddr;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
-      ctx->stepcnt = 0;
       ResetTimer(ctx->timer_id);
       snprintf(buf, sizeof(buf),
                "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
@@ -246,12 +250,16 @@ void ProcessOneTm(struct TM_Context *ctx) {
   // МТ1 получает сообщение от МТ2
   if (ctx->msg_id == MSG_TM1STRT) {
     if (FSM_GetMessage(MSG_SYNC_MT2_TO_MT1, (void *)&pRxbuf)) {
+      if (strcmp((char *)pRxbuf, "STOP") == 0) {
+        ctx->mtstatectrl = MTCTRL_RXCMD;
+        ctx->steptm = -1;
+        return;
+      }
       int state, nextaddr;
       sscanf((char *)pRxbuf, "%d:%d", &state, &nextaddr);
       ctx->fsmstate = (char)state;
       ctx->nextaddr = nextaddr;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
-      ctx->stepcnt = 0;
       ResetTimer(ctx->timer_id);
       snprintf(buf, sizeof(buf),
                "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
@@ -334,7 +342,18 @@ void ProcessOneTm(struct TM_Context *ctx) {
 
     int result = ProcTmStep(ctx, ctx->rdsymbol, &ctx->wrsymbol);
 
-    if (result == -1) {
+    if (result == -3) {
+      snprintf((char *)aTrbuf, sizeof(aTrbuf), "%s>hang detected\n", ctx->name);
+      send_via_uart((char *)aTrbuf);
+      ctx->steptm = -1;
+    } else if (result == -2) {
+      // достигнута граница, нужно записать символ перед синхронизацией
+      if (ctx->wrsymbol != ctx->rdsymbol) {
+        i2cFRAM_wr(ctx->curraddr, &ctx->wrsymbol, 1);
+      }
+      ctx->mtstatectrl = MTCTRL_SYNCWAIT;
+      break;
+    } else if (result == -1) {
       snprintf((char *)aTrbuf, sizeof(aTrbuf),
                "%s>stop addr=%03X sym='%c' %s\n", ctx->name, ctx->curraddr,
                ctx->wrsymbol, ctx->last_transition_info);
@@ -373,7 +392,6 @@ void ProcessOneTm(struct TM_Context *ctx) {
         } else {
           snprintf(buf, sizeof(buf), "%s>steps expired\n", ctx->name);
           send_via_uart(buf);
-          ctx->mtstatectrl = MTCTRL_SYNCWAIT;
           ctx->steptm = -1;
         }
       }
