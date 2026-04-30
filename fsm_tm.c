@@ -47,6 +47,10 @@ struct TM_Context {
   uint32_t last_addr;
   char last_state;
   char last_transition_info[256];
+  char boundary_reached;
+  char button_pending;
+  uint32_t button_addr;
+  uint8_t button_symbol;
 };
 
 static struct TM_Context mt1, mt2;
@@ -57,26 +61,11 @@ uint8_t normalize_symbol(uint8_t sym) {
   return '_';
 }
 
-void get_tape_str(char *buffer, int buf_size, uint8_t base_addr) {
-  char *ptr = buffer;
-  for (int i = 0; i < TAPE_SIZE; i++) {
-    uint8_t *val = (uint8_t *)i2cFRAM_rd(base_addr + i, 1);
-    ptr += snprintf(ptr, buf_size - (ptr - buffer), "%c", val ? val[0] : '?');
-  }
-}
-
-void send_via_uart(const char *str) {
-  uart_transmit((uint8_t *)str, (uint8_t)strlen(str));
-}
-
 int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
   static char sync_data[16];
 
   *wrsymb = rsymb;
   ctx->stepcnt++;
-
-  char tape_str[16];
-  get_tape_str(tape_str, sizeof(tape_str), ctx->base_addr);
 
   char transition[256];
   transition[0] = '\0';
@@ -86,12 +75,11 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     if (rsymb != '_') {
       ctx->nextaddr = ctx->curraddr + 1;
       ctx->fsmstate = FSMST_Q0;
-      snprintf(transition, sizeof(transition), "- Q0 %s [!_ ; ~ , R]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q0 [!_ ; ~ , R]");
     } else {
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q1;
-      snprintf(transition, sizeof(transition), "- Q0 %s [_ ; _ , L]", tape_str);
+      snprintf(transition, sizeof(transition), "- Q0 [_ ; _ , L]");
     }
     break;
 
@@ -99,11 +87,10 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     if (rsymb == '1') {
       *wrsymb = '0';
       ctx->fsmstate = FSMST_Q5;
-      snprintf(transition, sizeof(transition), "- Q1 %s [1 ; 0 , S]", tape_str);
+      snprintf(transition, sizeof(transition), "- Q1 [1 ; 0 , S]");
     } else {
       ctx->fsmstate = FSMST_Q2;
-      snprintf(transition, sizeof(transition), "- Q1 %s [!1 ; ~ , S]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q1 [!1 ; ~ , S]");
     }
     break;
 
@@ -112,16 +99,15 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
       *wrsymb = '9';
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q2;
-      snprintf(transition, sizeof(transition), "- Q2 %s [0 ; 9 , L]", tape_str);
+      snprintf(transition, sizeof(transition), "- Q2 [0 ; 9 , L]");
     } else if (rsymb >= '1' && rsymb <= '9') {
       *wrsymb = rsymb - 1;
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q3;
-      snprintf(transition, sizeof(transition), "- Q2 %s [%c ; %c , L]",
-               tape_str, rsymb, *wrsymb);
+      snprintf(transition, sizeof(transition), "- Q2 [%c ; %c , L]", rsymb,
+               *wrsymb);
     } else {
-      snprintf(transition, sizeof(transition), "- Q2: %s [undefined]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q2: [undefined]");
     }
     break;
 
@@ -129,12 +115,11 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
     if (rsymb != '_') {
       ctx->nextaddr = ctx->curraddr - 1;
       ctx->fsmstate = FSMST_Q3;
-      snprintf(transition, sizeof(transition), "- Q3 %s [!_ ; ~ , L]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q3 [!_ ; ~ , L]");
     } else {
       ctx->nextaddr = ctx->curraddr + 1;
       ctx->fsmstate = FSMST_Q4;
-      snprintf(transition, sizeof(transition), "- Q3 %s [_ ; _ , R]", tape_str);
+      snprintf(transition, sizeof(transition), "- Q3 [_ ; _ , R]");
     }
     break;
 
@@ -143,27 +128,25 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
       *wrsymb = '_';
       ctx->nextaddr = ctx->curraddr + 1;
       ctx->fsmstate = FSMST_Q4;
-      snprintf(transition, sizeof(transition), "- Q4 %s [0 ; _ , R]", tape_str);
+      snprintf(transition, sizeof(transition), "- Q4 [0 ; _ , R]");
     } else {
       ctx->fsmstate = FSMST_Q5;
-      snprintf(transition, sizeof(transition), "- Q4 %s [!0 ; ~ , S]",
-               tape_str);
+      snprintf(transition, sizeof(transition), "- Q4 [!0 ; ~ , S]");
     }
     break;
 
   case FSMST_Q5:
-    ctx->steptm = -1;
-    snprintf(transition, sizeof(transition), "- Q5 %s", tape_str);
+    snprintf(transition, sizeof(transition), "- Q5");
 
     if (ctx->base_addr == MT1_BASE_ADDR) {
       FSM_SendMessage(MSG_SYNC_MT1_TO_MT2, "STOP");
     } else {
       FSM_SendMessage(MSG_SYNC_MT2_TO_MT1, "STOP");
     }
-
+    return -1;
     break;
+
   default:
-    ctx->steptm = -1;
     break;
   }
 
@@ -191,7 +174,6 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
   if (ctx->curraddr == ctx->last_addr && ctx->fsmstate == ctx->last_state) {
     ctx->hang_counter++;
     if (ctx->hang_counter > 1) {
-      snprintf(transition, sizeof(transition), "%s>hang detected\n", ctx->name);
       return -3;
     }
   } else {
@@ -206,20 +188,19 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
 void ProcessOneTm(struct TM_Context *ctx) {
   static uint8_t aTrbuf[256];
   uint8_t *pRxbuf = 0;
-  char buf[256];
 
-  // Обработка нажатий кнопок
+  // обработка нажатий кнопок
   if (FSM_GetMessage(MSG_KEYPRESSED, (void *)&pRxbuf)) {
     if (pRxbuf != NULL) {
       uint16_t keycode = *(uint16_t *)pRxbuf;
-      uint8_t blank = '_';
       for (int i = 0; i < 16; i++) {
         if (keycode & (1 << i)) {
           uint32_t addr = (i < 8) ? MT1_BASE_ADDR + i : MT2_BASE_ADDR + (i - 8);
-          i2cFRAM_wr(addr, &blank, 1);
-          snprintf(buf, sizeof(buf), "%s>fail addr %d (K%d pressed)\n",
-                   ctx->name, addr, i + 1);
-          send_via_uart(buf);
+          ctx->button_addr = addr;
+          ctx->button_symbol = '_';
+          ctx->button_pending = 1;
+          ctx->mtstatectrl = MTCTRL_WRFRAM;
+          return;
         }
       }
     }
@@ -237,12 +218,13 @@ void ProcessOneTm(struct TM_Context *ctx) {
       sscanf((char *)pRxbuf, "%d:%d", &state, &nextaddr);
       ctx->fsmstate = (char)state;
       ctx->nextaddr = nextaddr;
+      ctx->boundary_reached = 0;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ResetTimer(ctx->timer_id);
-      snprintf(buf, sizeof(buf),
+      snprintf((char *)aTrbuf, sizeof(aTrbuf),
                "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
-               state, ctx->nextaddr, ctx->steptm);
-      send_via_uart(buf);
+               state, ctx->nextaddr, ctx->stepcnt);
+      ctx->mtstatectrl = MTCTRL_UARTTR;
       return;
     }
   }
@@ -259,21 +241,15 @@ void ProcessOneTm(struct TM_Context *ctx) {
       sscanf((char *)pRxbuf, "%d:%d", &state, &nextaddr);
       ctx->fsmstate = (char)state;
       ctx->nextaddr = nextaddr;
+      ctx->boundary_reached = 0;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ResetTimer(ctx->timer_id);
-      snprintf(buf, sizeof(buf),
+      snprintf((char *)aTrbuf, sizeof(aTrbuf),
                "%s>sync restored, state=%d, addr=0x%03X, steps=%d\n", ctx->name,
-               state, ctx->nextaddr, ctx->steptm);
-      send_via_uart(buf);
+               state, ctx->nextaddr, ctx->stepcnt);
+      ctx->mtstatectrl = MTCTRL_UARTTR;
       return;
     }
-  }
-
-  // Если МТ в состоянии SYNCWAIT и не получила сообщение
-  if (ctx->mtstatectrl == MTCTRL_SYNCWAIT) {
-    snprintf(buf, sizeof(buf), "%s>waiting for sync\n", ctx->name);
-    send_via_uart(buf);
-    return;
   }
 
   switch (ctx->mtstatectrl) {
@@ -283,16 +259,13 @@ void ProcessOneTm(struct TM_Context *ctx) {
       strncpy(local_cmd, (char *)pRxbuf, 31);
       local_cmd[31] = '\0';
       ctx->nextaddr = 0;
-      ctx->steptm = 0;
-      sscanf(local_cmd, "%x:%d", &ctx->nextaddr, &ctx->steptm);
+      int received_steps = 0;
+      sscanf(local_cmd, "%x:%d", &ctx->nextaddr, &received_steps);
 
       if ((ctx->base_addr == MT1_BASE_ADDR &&
            ctx->nextaddr >= MT1_BASE_ADDR + TAPE_SIZE) ||
           (ctx->base_addr == MT2_BASE_ADDR && ctx->nextaddr < MT2_BASE_ADDR)) {
 
-        snprintf(buf, sizeof(buf), "%s: start address out of tape bounds!\n",
-                 ctx->name);
-        send_via_uart(buf);
         snprintf((char *)aTrbuf, sizeof(aTrbuf),
                  "%s Error: address out of tape bounds!\n", ctx->name);
         ctx->mtstatectrl = MTCTRL_UARTTR;
@@ -300,10 +273,12 @@ void ProcessOneTm(struct TM_Context *ctx) {
         break;
       }
 
-      if (ctx->nextaddr <= FRAM_MAX_ADDR && ctx->steptm > 0) {
+      if (ctx->nextaddr <= FRAM_MAX_ADDR && received_steps > 0) {
+        ctx->steptm = received_steps;
+        ctx->stepcnt = 0;
+        ctx->boundary_reached = 0;
         ctx->mtstatectrl = MTCTRL_RDFRAM;
         ctx->fsmstate = FSMST_Q0;
-        ctx->stepcnt = 0;
         ResetTimer(ctx->timer_id);
       } else {
         snprintf((char *)aTrbuf, sizeof(aTrbuf), "%s Error!\n", ctx->name);
@@ -314,11 +289,9 @@ void ProcessOneTm(struct TM_Context *ctx) {
     break;
 
   case MTCTRL_RDFRAM:
-    if (ctx->steptm <= 0) {
-      ctx->mtstatectrl = MTCTRL_RXCMD;
+    if (ctx->boundary_reached) {
       break;
     }
-
     ctx->curraddr = ctx->nextaddr;
     if (ctx->curraddr > FRAM_MAX_ADDR) {
       snprintf((char *)aTrbuf, sizeof(aTrbuf),
@@ -335,35 +308,29 @@ void ProcessOneTm(struct TM_Context *ctx) {
     break;
 
   case MTCTRL_PROC: {
-    if (ctx->steptm <= 0) {
-      ctx->mtstatectrl = MTCTRL_RXCMD;
-      break;
-    }
-
     int result = ProcTmStep(ctx, ctx->rdsymbol, &ctx->wrsymbol);
 
     if (result == -3) {
       snprintf((char *)aTrbuf, sizeof(aTrbuf), "%s>hang detected\n", ctx->name);
-      send_via_uart((char *)aTrbuf);
       ctx->steptm = -1;
-    } else if (result == -2) {
-      // достигнута граница, нужно записать символ перед синхронизацией
-      if (ctx->wrsymbol != ctx->rdsymbol) {
-        i2cFRAM_wr(ctx->curraddr, &ctx->wrsymbol, 1);
-      }
-      ctx->mtstatectrl = MTCTRL_SYNCWAIT;
+      ctx->mtstatectrl = MTCTRL_UARTTR;
       break;
-    } else if (result == -1) {
+    } else if (result == -2) {
+      ctx->boundary_reached = 1;
+      ctx->mtstatectrl = MTCTRL_WRFRAM;
+      break;
+    } else if (result == -1 || result == ctx->steptm) {
       snprintf((char *)aTrbuf, sizeof(aTrbuf),
                "%s>stop addr=%03X sym='%c' %s\n", ctx->name, ctx->curraddr,
                ctx->wrsymbol, ctx->last_transition_info);
       ctx->steptm = -1;
+      ctx->mtstatectrl = MTCTRL_UARTTR;
+      break;
     } else {
       snprintf((char *)aTrbuf, sizeof(aTrbuf),
                "%s>step=%d addr=%03X sym='%c' %s\n", ctx->name, result,
                ctx->curraddr, ctx->wrsymbol, ctx->last_transition_info);
     }
-    send_via_uart((char *)aTrbuf);
 
     if (ctx->wrsymbol == ctx->rdsymbol) {
       ctx->mtstatectrl = MTCTRL_UARTTR;
@@ -374,28 +341,45 @@ void ProcessOneTm(struct TM_Context *ctx) {
   }
 
   case MTCTRL_WRFRAM:
+
+    if (ctx->button_pending) {
+      i2cFRAM_wr(ctx->button_addr, &ctx->button_symbol, 1);
+      snprintf((char *)aTrbuf, sizeof(aTrbuf), "%s>fail addr %d (K pressed)\n",
+               ctx->name, ctx->button_addr);
+      ctx->button_pending = 0;
+      ctx->mtstatectrl = MTCTRL_UARTTR;
+      break;
+    }
+
     if (ctx->curraddr <= FRAM_MAX_ADDR) {
       i2cFRAM_wr(ctx->curraddr, &ctx->wrsymbol, 1);
     }
-    ctx->mtstatectrl = MTCTRL_UARTTR;
+
+    if (ctx->boundary_reached) {
+      ctx->mtstatectrl = MTCTRL_SYNCWAIT;
+    } else {
+      ctx->mtstatectrl = MTCTRL_UARTTR;
+    }
     break;
 
   case MTCTRL_UARTTR:
     if (GetTimer(ctx->timer_id) > 250) {
       ResetTimer(ctx->timer_id);
-      if (ctx->steptm == -1) {
-        ctx->mtstatectrl = MTCTRL_RXCMD;
-      } else {
-        ctx->steptm--;
-        if (ctx->steptm > 0) {
-          ctx->mtstatectrl = MTCTRL_RDFRAM;
+      if (uart_transmit(aTrbuf, (uint8_t)strlen((char *)aTrbuf)) == 0) {
+        if (ctx->steptm == -1) {
+          ctx->mtstatectrl = MTCTRL_RXCMD;
+          ctx->boundary_reached = 0;
         } else {
-          snprintf(buf, sizeof(buf), "%s>steps expired\n", ctx->name);
-          send_via_uart(buf);
-          ctx->steptm = -1;
+          ctx->mtstatectrl = MTCTRL_RDFRAM;
         }
       }
     }
+    break;
+
+  case MTCTRL_SYNCWAIT:
+    snprintf((char *)aTrbuf, sizeof(aTrbuf),
+             "%s>waiting for sync\n", ctx->name);
+    ctx->mtstatectrl = MTCTRL_UARTTR;
     break;
   }
 }
@@ -420,6 +404,8 @@ void InitTM(void) {
   mt1.hang_counter = 0;
   mt1.last_addr = 0;
   mt1.last_state = 0;
+  mt1.boundary_reached = 0;
+  mt1.button_pending = 0;
   strcpy(mt1.name, "TM1");
 
   mt2.curraddr = 0;
@@ -436,6 +422,8 @@ void InitTM(void) {
   mt2.hang_counter = 0;
   mt2.last_addr = 0;
   mt2.last_state = 0;
+  mt2.boundary_reached = 0;
+  mt2.button_pending = 0;
   strcpy(mt2.name, "TM2");
 }
 
