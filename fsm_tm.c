@@ -53,7 +53,8 @@ struct TM_Context {
   uint8_t button_symbol;
   char pending_msg[256];
   char msg_ready;
-  char stop_requested; // флаг, что МТ должна остановиться
+  char stop_requested;
+  char sync_waiting;
 };
 
 static struct TM_Context mt1, mt2;
@@ -147,7 +148,6 @@ int ProcTmStep(struct TM_Context *ctx, uint8_t rsymb, uint8_t *wrsymb) {
       FSM_SendMessage(MSG_SYNC_MT2_TO_MT1, "STOP");
     }
     return -1;
-    break;
 
   default:
     break;
@@ -198,12 +198,10 @@ void ProcessOneTm(struct TM_Context *ctx) {
       for (int i = 0; i < 16; i++) {
         if (keycode & (1 << i)) {
           uint32_t addr = (i < 8) ? MT1_BASE_ADDR + i : MT2_BASE_ADDR + (i - 8);
-          // Проверяем, принадлежит ли адрес этой МТ
           if (addr >= ctx->base_addr && addr < ctx->base_addr + TAPE_SIZE) {
             ctx->button_addr = addr;
             ctx->button_symbol = '_';
             ctx->button_pending = 1;
-            // Прерываем текущую операцию для обработки кнопки
             ctx->mtstatectrl = MTCTRL_WRFRAM;
             return;
           }
@@ -227,6 +225,7 @@ void ProcessOneTm(struct TM_Context *ctx) {
       ctx->nextaddr = nextaddr;
       ctx->boundary_reached = 0;
       ctx->stop_requested = 0;
+      ctx->sync_waiting = 0;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ResetTimer(ctx->timer_id);
       snprintf(ctx->pending_msg, sizeof(ctx->pending_msg),
@@ -253,6 +252,7 @@ void ProcessOneTm(struct TM_Context *ctx) {
       ctx->nextaddr = nextaddr;
       ctx->boundary_reached = 0;
       ctx->stop_requested = 0;
+      ctx->sync_waiting = 0;
       ctx->mtstatectrl = MTCTRL_RDFRAM;
       ResetTimer(ctx->timer_id);
       snprintf(ctx->pending_msg, sizeof(ctx->pending_msg),
@@ -291,6 +291,7 @@ void ProcessOneTm(struct TM_Context *ctx) {
         ctx->stepcnt = 0;
         ctx->boundary_reached = 0;
         ctx->stop_requested = 0;
+        ctx->sync_waiting = 0;
         ctx->mtstatectrl = MTCTRL_RDFRAM;
         ctx->fsmstate = FSMST_Q0;
         ResetTimer(ctx->timer_id);
@@ -328,8 +329,6 @@ void ProcessOneTm(struct TM_Context *ctx) {
     int result = ProcTmStep(ctx, ctx->rdsymbol, &ctx->wrsymbol);
 
     if (result == -3) {
-      // Обнаружено зависание - немедленно отправляем сообщение и останавливаем
-      // МТ
       snprintf(ctx->pending_msg, sizeof(ctx->pending_msg), "%s>hang detected\n",
                ctx->name);
       ctx->msg_ready = 1;
@@ -338,7 +337,13 @@ void ProcessOneTm(struct TM_Context *ctx) {
       ctx->mtstatectrl = MTCTRL_UARTTR;
       break;
     } else if (result == -2) {
+      snprintf(ctx->pending_msg, sizeof(ctx->pending_msg),
+               "%s>step=%d addr=%03X sym='%c' %s\n", ctx->name, ctx->stepcnt,
+               ctx->curraddr, ctx->wrsymbol, ctx->last_transition_info);
+      ctx->msg_ready = 1;
       ctx->boundary_reached = 1;
+      ctx->sync_waiting = 1;
+
       if (ctx->wrsymbol != ctx->rdsymbol) {
         ctx->mtstatectrl = MTCTRL_WRFRAM;
       } else {
@@ -401,14 +406,20 @@ void ProcessOneTm(struct TM_Context *ctx) {
         }
       }
 
-      // Если запрошена остановка, переходим в RXCMD
-      if (ctx->stop_requested) {
+      if (ctx->sync_waiting && !ctx->msg_ready) {
+        snprintf(ctx->pending_msg, sizeof(ctx->pending_msg),
+                 "%s>waiting for sync\n", ctx->name);
+        ctx->msg_ready = 1;
+        ctx->sync_waiting = 0;
+      } else if (ctx->stop_requested) {
         ctx->mtstatectrl = MTCTRL_RXCMD;
         ctx->boundary_reached = 0;
         ctx->stop_requested = 0;
+        ctx->sync_waiting = 0;
       } else if (ctx->steptm == -1) {
         ctx->mtstatectrl = MTCTRL_RXCMD;
         ctx->boundary_reached = 0;
+        ctx->sync_waiting = 0;
       } else {
         if (!ctx->boundary_reached) {
           ctx->mtstatectrl = MTCTRL_RDFRAM;
@@ -418,7 +429,7 @@ void ProcessOneTm(struct TM_Context *ctx) {
     break;
 
   case MTCTRL_SYNCWAIT:
-    if (!ctx->msg_ready) {
+    if (!ctx->msg_ready && !ctx->sync_waiting) {
       snprintf(ctx->pending_msg, sizeof(ctx->pending_msg),
                "%s>waiting for sync\n", ctx->name);
       ctx->msg_ready = 1;
@@ -452,6 +463,7 @@ void InitTM(void) {
   mt1.button_pending = 0;
   mt1.msg_ready = 0;
   mt1.stop_requested = 0;
+  mt1.sync_waiting = 0;
   memset(mt1.pending_msg, 0, sizeof(mt1.pending_msg));
   strcpy(mt1.name, "TM1");
 
@@ -473,6 +485,7 @@ void InitTM(void) {
   mt2.button_pending = 0;
   mt2.msg_ready = 0;
   mt2.stop_requested = 0;
+  mt2.sync_waiting = 0;
   memset(mt2.pending_msg, 0, sizeof(mt2.pending_msg));
   strcpy(mt2.name, "TM2");
 }
