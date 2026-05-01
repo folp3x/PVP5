@@ -58,7 +58,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="nikita.docx" />
     <None Include="README.MD" />
   </ItemGroup>
 </Project>

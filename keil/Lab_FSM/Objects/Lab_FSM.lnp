@@ -1,0 +1,24 @@
+--cpu=Cortex-M4.fp.sp
+".\objects\fsm_main.o"
+".\objects\fsm_tm.o"
+".\objects\i2cfram.o"
+".\objects\keypad.o"
+".\objects\main.o"
+".\objects\messages.o"
+".\objects\timers.o"
+".\objects\uart.o"
+".\objects\retarget_io.o"
+".\objects\stm32f3xx_ll_dma.o"
+".\objects\stm32f3xx_ll_gpio.o"
+".\objects\stm32f3xx_ll_i2c.o"
+".\objects\stm32f3xx_ll_pwr.o"
+".\objects\stm32f3xx_ll_rcc.o"
+".\objects\stm32f3xx_ll_usart.o"
+".\objects\stm32f3xx_ll_utils.o"
+".\objects\stm32f3xx_ll.o"
+".\objects\startup_stm32f303xc.o"
+".\objects\system_stm32f3xx.o"
+--strict --scatter ".\Objects\Lab_FSM.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Listings\Lab_FSM.map" -o .\Objects\Lab_FSM.axf

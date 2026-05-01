@@ -156,7 +156,6 @@
     <ClInclude Include="uart.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="nikita.docx" />
     <None Include="README.MD" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

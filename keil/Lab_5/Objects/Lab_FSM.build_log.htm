@@ -1,0 +1,122 @@
+<html>
+<body>
+<pre>
+<h1>µVision Build Log</h1>
+<h2>Tool Versions:</h2>
+IDE-Version: µVision V5.43.1.0
+Copyright (C) 2025 ARM Ltd and ARM Germany GmbH. All rights reserved.
+License Information: ivan ivanov, SUAI, LIC=----
+ 
+Tool Versions:
+Toolchain:       MDK-Lite  Version: 5.43.0.0
+Toolchain Path:  C:\Users\gjghc\AppData\Local\Keil_v5\ARM\ARMCLANG\Bin
+C Compiler:      ArmClang.exe V6.24
+Assembler:       Armasm.exe V6.24
+Linker/Locator:  ArmLink.exe V6.24
+Library Manager: ArmAr.exe V6.24
+Hex Converter:   FromElf.exe V6.24
+CPU DLL:         SARMCM3.DLL V5.43.0.0
+Dialog DLL:      DCM.DLL V1.17.5.0
+Target DLL:      STLink\ST-LINKIII-KEIL_SWO.dll V3.3.1.0
+Dialog DLL:      TCM.DLL V1.56.6.0
+ 
+<h2>Project:</h2>
+C:\Users\gjghc\Downloads\embedded\lab5\Lab_5\Lab_FSM.uvprojx
+Project File Date:  04/18/2026
+
+<h2>Output:</h2>
+*** Using Compiler 'V6.24', folder: 'C:\Users\gjghc\AppData\Local\Keil_v5\ARM\ARMCLANG\Bin'
+Build target 'Lab_FSM'
+compiling main.c...
+compiling i2cFram.c...
+compiling fsm_main.c...
+compiling keypad.c...
+compiling fsm_tm.c...
+compiling messages.c...
+compiling timers.c...
+compiling uart.c...
+linking...
+Program Size: Code=30400 RO-data=1804 RW-data=16 ZI-data=4416  
+FromELF: creating hex file...
+".\Objects\Lab_FSM.axf" - 0 Error(s), 0 Warning(s).
+
+<h2>Software Packages used:</h2>
+
+Package Vendor: ARM
+                https://www.keil.com/pack/ARM.CMSIS.6.2.0.pack
+                ARM::CMSIS@6.2.0
+                CMSIS (Common Microcontroller Software Interface Standard)
+   * Component: CORE Version: 6.1.1
+
+Package Vendor: Keil
+                https://www.keil.com/pack/Keil.ARM_Compiler.1.7.2.pack
+                Keil::ARM_Compiler@1.7.2
+                Keil ARM Compiler extensions for ARM Compiler 5 and ARM Compiler 6
+   * Component: STDOUT Variant: ITM Version: 1.2.0
+
+Package Vendor: Keil
+                http://www.keil.com/pack/Keil.STM32F3xx_DFP.2.2.2.pack
+                Keil::STM32F3xx_DFP@2.2.2
+                STMicroelectronics STM32F3 Series Device Support and Examples
+   * Component: COMMON Version: 1.11.3
+   * Component: DMA Version: 1.11.3
+   * Component: GPIO Version: 1.11.3
+   * Component: I2C Version: 1.11.3
+   * Component: PWR Version: 1.11.3
+   * Component: RCC Version: 1.11.3
+   * Component: USART Version: 1.11.3
+   * Component: UTILS Version: 1.11.3
+   * Component: Startup Version: 1.11.3
+
+<h2>Collection of Component include folders:</h2>
+  ./RTE/_Lab_FSM
+  C:/Users/gjghc/AppData/Local/Arm/Packs/ARM/CMSIS/6.2.0/CMSIS/Core/Include
+  C:/Users/gjghc/AppData/Local/Arm/Packs/Keil/STM32F3xx_DFP/2.2.2/Drivers/CMSIS/Device/ST/STM32F3xx/Include
+  C:/Users/gjghc/AppData/Local/Arm/Packs/Keil/STM32F3xx_DFP/2.2.2/Drivers/STM32F3xx_HAL_Driver/Inc
+  C:/Users/gjghc/AppData/Local/Arm/Packs/Keil/STM32F3xx_DFP/2.2.2/Drivers/STM32F3xx_HAL_Driver/Inc/Legacy
+
+<h2>Collection of Component Files used:</h2>
+
+   * Component: ARM::CMSIS:CORE@6.1.1
+
+   * Component: Keil::Compiler&ARM Compiler:I/O:STDOUT&ITM@1.2.0
+      Source file:   Source/retarget_io.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:COMMON@1.11.3
+      Source file:   MDK/Driver/stm32f3xx_ll.c
+      Include file:  MDK/Templates_LL/Inc/stm32_assert.h
+      Include file:  MDK/Templates_LL/Inc/stm32f3xx_it.h
+      Source file:   MDK/Templates_LL/Src/main.c
+      Include file:  MDK/Templates_LL/Inc/main.h
+      Source file:   MDK/Templates_LL/Src/stm32f3xx_it.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:DMA@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_dma.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:GPIO@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_gpio.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:I2C@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_i2c.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:PWR@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_pwr.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:RCC@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_rcc.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:USART@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_usart.c
+
+   * Component: Keil::Device&Standalone:STM32Cube LL:UTILS@1.11.3
+      Source file:   Drivers/STM32F3xx_HAL_Driver/Src/stm32f3xx_ll_utils.c
+
+   * Component: Keil::Device&Standalone:Startup@1.11.3
+      Source file:   MDK/Device/Source/ARM/STM32F3xx_OPT.s
+      Include file:  Drivers/CMSIS/Device/ST/STM32F3xx/Include/stm32f3xx.h
+      Source file:   Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/system_stm32f3xx.c
+      Source file:   Drivers/CMSIS/Device/ST/STM32F3xx/Source/Templates/arm/startup_stm32f303xc.s
+Build Time Elapsed:  00:00:02
+</pre>
+</body>
+</html>
